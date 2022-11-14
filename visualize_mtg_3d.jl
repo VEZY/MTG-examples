@@ -19,6 +19,8 @@ begin
 	using Meshes
 	using MeshViz
 	using ColorSchemes
+	using Colors
+	using CoordinateTransformations
 end
 
 # ╔═╡ b8dc82ee-9d26-46d0-b474-00156ff4202f
@@ -90,12 +92,85 @@ function build_wood!(
     if node.MTG.symbol == "Segment" || (node.MTG.symbol == "Phytomer" && node[:length] !== nothing)
         node_cyl = cylinder(node, parent_plane)
         parent_plane = node_cyl.top
-        node[:cyl] = node_cyl
+        node[:geometry] = node_cyl
     end
 
     if !isleaf(node)
         for chnode in MultiScaleTreeGraph.ordered_children(node)
             build_wood!(chnode, parent_plane)
+        end
+    end
+end
+
+# ╔═╡ ba9f89d4-841f-46e3-aba3-700ed5aca2a9
+"""
+	leaf_mesh(l,w,p)
+
+Build a leaf mesh using its length (`l`),  width (`w`) and petiole length (`p`)
+"""
+function leaf_mesh(l,w,p)
+	points = [
+		(0.0 ,-0.05 * w, 0.), # Petiole base 1
+		(0.0, 0.05 * w, 0.), # Base 2. NB: the petiole base width is 5% of the leaf width 
+		(p, 0.0, 0.0), # End of petiole, first point of leaf blade
+		(p + l, 0.0, 0.0), # tip of the leaf
+		(p + l / 2.0, -w / 2.0, 0.0), 
+		(p + l / 2.0, w / 2.0, 0.0)
+	] 
+	
+	connec = Meshes.connect.(
+		[
+			(1,2,3), # Petiole
+			(3,5,4), # left part of the leaf
+			(3,6,4)  # right part of the leaf
+		], 
+		Triangle
+	)
+
+	return Meshes.SimpleMesh(points, connec)
+end
+
+# ╔═╡ 400e8363-4ce0-432e-9431-132aee2e4c3a
+"""
+	build_leaves!(node::MultiScaleTreeGraph.Node)
+
+Build the meshes for the nodes called "Leaf" using a mesh of reference and the geometric attributes: `length`, `diameter` (used as the maximum lead width) and `length_petiole`.
+"""
+function build_leaves!(node::MultiScaleTreeGraph.Node)
+
+    if node.MTG.symbol == "Leaf"
+		# Build the reference mesh to scale:
+        node_mesh = leaf_mesh(node[:length],node[:diameter],node[:length_petiole])
+
+		# NB: if we want to use a more complex mesh for the leaf, we have to make a referece mesh and scale it in x, y and z afterward (here)
+		
+		# Rotate the leaf using the angles, and translate it to the position of the parent node top-point:
+
+		α = 360 - node[:azimuthal_angle] # Azimuth (in degrees)
+		β = 90.0 - node[:zenithal_angle] # Elevation (i.e. zenithal angle, in degrees)
+		
+		# To check !! Does not work properly, use Rotations.jl instead
+		rot_mat = 
+		[
+			cosd(α) * cosd(β) 0 0 
+			0 sind(α) * cosd(β) 0 
+			0 0 sind(β) 
+		]
+		
+		transformation = 
+			Translation(node.parent[:geometry].top.p.coords) ∘ # The point of the top cylinder of the parent node
+			LinearMap(rot_mat)
+        scaled_mesh = Array{Meshes.Point3}(undef, Meshes.nvertices(node_mesh))
+        for (i, p) in enumerate(node_mesh.points)
+            scaled_mesh[i] = Meshes.Point3(transformation(p.coords))
+        end
+		
+        node[:geometry] = SimpleMesh(scaled_mesh, node_mesh.topology)
+    end
+
+    if !isleaf(node)
+        for chnode in MultiScaleTreeGraph.ordered_children(node)
+            build_leaves!(chnode)
         end
     end
 end
@@ -109,35 +184,53 @@ begin
 	end
 	branching_order!(mtg)
 	build_wood!(mtg)
+	build_leaves!(mtg)
 	max_order = maximum(descendants(mtg, :branching_order, self=true))
 	mtg
 end
 
 # ╔═╡ 58bf1cb9-0cab-439d-9399-d97b2cc27332
 begin
-fig2 = Figure()
-cam3d!(fig2.scene)
+	fig2 = Figure()
+	cam3d!(fig2.scene)
+	ax = LScene(fig2[1, 1], show_axis=true)
+	traverse!(mtg, filter_fun=node -> node[:geometry] !== nothing) do node
+	    MeshViz.viz!(
+	        ax,
+	        node[:geometry],
+	        color=get(
+	            (ColorSchemes.seaborn_rocket_gradient),
+	            node[:branching_order] / max_order
+	        )
+	    )
+	end
 	
-#ax1 = Axis3(fig2[1, 1], aspect = :data, viewmode = :fit)
-ax = LScene(fig2[1, 1], show_axis=false)
-traverse!(mtg, filter_fun=node -> node[:cyl] !== nothing) do node
-    MeshViz.viz!(
-        ax,
-        node[:cyl],
-        color=get(
-            (ColorSchemes.seaborn_rocket_gradient),
-            node[:branching_order] / max_order
-        )
-    )
+	fig2
 end
 
-	fig2
+# ╔═╡ dffbe2ea-c9ec-4e0b-81f8-3f69697bf5fc
+md"""
+Example:
+"""
+
+# ╔═╡ cb849bc6-0433-4491-bf5d-d26525effb3f
+begin
+	leaf_width = 2.0; leaf_length = 5.0; petiole_length = 1.0
+	mesh = leaf_mesh(leaf_length, leaf_width, petiole_length)
+
+	fig3 = Figure()
+	cam3d!(fig3.scene)
+	ax3 = LScene(fig3[1, 1], show_axis=true)
+	MeshViz.viz!(mesh, color = [RGB(0,0.5,0), RGB(0,0.5,0.1), RGB(0.1,0.5,0)])
+	fig3
 end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
 ColorSchemes = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
+Colors = "5ae59095-9a9b-59fe-a467-6f913c188581"
+CoordinateTransformations = "150eb455-5306-5404-9cee-2592286d6298"
 JSServe = "824d6782-a2ef-11e9-3a09-e5662e0c26f9"
 MeshViz = "9ecf9c4f-6e5a-4b5e-83ae-06f2c7a661d8"
 Meshes = "eacbb407-ea5a-433e-ab97-5258b1ca43fa"
@@ -148,6 +241,8 @@ WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 
 [compat]
 ColorSchemes = "~3.19.0"
+Colors = "~0.12.8"
+CoordinateTransformations = "~0.6.2"
 JSServe = "~1.2.9"
 MeshViz = "~0.6.1"
 Meshes = "~0.25.15"
@@ -163,7 +258,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.8.2"
 manifest_format = "2.0"
-project_hash = "a2b3315655f72f93a0941c4f5602bbe9dff99483"
+project_hash = "e671e3210bce1864bad50049bab63a463ebc7427"
 
 [[deps.AbstractFFTs]]
 deps = ["ChainRulesCore", "LinearAlgebra"]
@@ -324,6 +419,12 @@ version = "0.5.2+0"
 [[deps.Contour]]
 git-tree-sha1 = "d05d9e7b7aedff4e5b51a029dced05cfb6125781"
 uuid = "d38c429a-6771-53c6-b99e-75d170b6e991"
+version = "0.6.2"
+
+[[deps.CoordinateTransformations]]
+deps = ["LinearAlgebra", "StaticArrays"]
+git-tree-sha1 = "681ea870b918e7cff7111da58791d7f718067a19"
+uuid = "150eb455-5306-5404-9cee-2592286d6298"
 version = "0.6.2"
 
 [[deps.Crayons]]
@@ -1638,11 +1739,15 @@ version = "3.5.0+0"
 # ╠═2434b075-8584-4467-b7d3-15423aad8722
 # ╠═efd1540a-62aa-11ed-265c-27e80dd841af
 # ╟─5619debd-b1b4-44c1-ac8e-6848036884e2
-# ╟─88b9fdd0-4934-47d4-b5fd-6ea1fd38a6a0
+# ╠═88b9fdd0-4934-47d4-b5fd-6ea1fd38a6a0
 # ╟─dd3d031d-2f2d-409d-b391-0f50e662260e
 # ╠═58bf1cb9-0cab-439d-9399-d97b2cc27332
 # ╟─bde91afb-ee5e-4859-ad06-0f24e944c186
-# ╠═19a07ff7-421a-441c-8586-9ddc8c6ae703
-# ╠═92dff6b8-e631-4248-9248-b16d6abc71d0
+# ╟─19a07ff7-421a-441c-8586-9ddc8c6ae703
+# ╟─92dff6b8-e631-4248-9248-b16d6abc71d0
+# ╠═ba9f89d4-841f-46e3-aba3-700ed5aca2a9
+# ╠═400e8363-4ce0-432e-9431-132aee2e4c3a
+# ╟─dffbe2ea-c9ec-4e0b-81f8-3f69697bf5fc
+# ╠═cb849bc6-0433-4491-bf5d-d26525effb3f
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
