@@ -20,7 +20,7 @@ begin
 	using MeshViz
 	using ColorSchemes
 	using Colors
-	using CoordinateTransformations
+	using CoordinateTransformations, Rotations
 end
 
 # ╔═╡ b8dc82ee-9d26-46d0-b474-00156ff4202f
@@ -146,21 +146,14 @@ function build_leaves!(node::MultiScaleTreeGraph.Node)
 		
 		# Rotate the leaf using the angles, and translate it to the position of the parent node top-point:
 
-		α = 360 - node[:azimuthal_angle] # Azimuth (in degrees)
-		β = 90.0 - node[:zenithal_angle] # Elevation (i.e. zenithal angle, in degrees)
-		
-		# To check !! Does not work properly, use Rotations.jl instead
-		rot_mat = 
-		[
-			cosd(α) * cosd(β) 0 0 
-			0 sind(α) * cosd(β) 0 
-			0 0 sind(β) 
-		]
+		α = deg2rad(node[:azimuthal_angle]) # Azimuth (in degrees)
+		β = deg2rad(node[:zenithal_angle]) # Elevation (i.e. zenithal angle, in degrees)
 		
 		transformation = 
 			Translation(node.parent[:geometry].top.p.coords) ∘ # The point of the top cylinder of the parent node
-			LinearMap(rot_mat)
-        scaled_mesh = Array{Meshes.Point3}(undef, Meshes.nvertices(node_mesh))
+			LinearMap(RotZY(α, β))
+        
+		scaled_mesh = Array{Meshes.Point3}(undef, Meshes.nvertices(node_mesh))
         for (i, p) in enumerate(node_mesh.points)
             scaled_mesh[i] = Meshes.Point3(transformation(p.coords))
         end
@@ -237,6 +230,7 @@ Meshes = "eacbb407-ea5a-433e-ab97-5258b1ca43fa"
 MultiScaleTreeGraph = "dd4a991b-8a45-4075-bede-262ee62d5583"
 PlutoHooks = "0ff47ea0-7a50-410d-8455-4348d5de0774"
 PlutoLinks = "0ff47ea0-7a50-410d-8455-4348d5de0420"
+Rotations = "6038ab10-8711-5258-84ad-4b1120ba62dc"
 WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 
 [compat]
@@ -249,6 +243,7 @@ Meshes = "~0.25.15"
 MultiScaleTreeGraph = "~0.7.0"
 PlutoHooks = "~0.0.5"
 PlutoLinks = "~0.1.6"
+Rotations = "~1.3.3"
 WGLMakie = "~0.7.2"
 """
 
@@ -258,7 +253,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.8.2"
 manifest_format = "2.0"
-project_hash = "e671e3210bce1864bad50049bab63a463ebc7427"
+project_hash = "d7367cd8fe373260d40c5415e5a427ff18add4af"
 
 [[deps.AbstractFFTs]]
 deps = ["ChainRulesCore", "LinearAlgebra"]
@@ -1286,6 +1281,12 @@ git-tree-sha1 = "97aa253e65b784fd13e83774cadc95b38011d734"
 uuid = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 version = "2.6.0"
 
+[[deps.Quaternions]]
+deps = ["LinearAlgebra", "Random"]
+git-tree-sha1 = "fcebf40de9a04c58da5073ec09c1c1e95944c79b"
+uuid = "94ee1d12-ae83-5a48-8b1c-48b8ff168ae0"
+version = "0.6.1"
+
 [[deps.REPL]]
 deps = ["InteractiveUtils", "Markdown", "Sockets", "Unicode"]
 uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
@@ -1340,6 +1341,12 @@ deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "68db32dff12bb6127bac73c209881191bf0efbb7"
 uuid = "f50d1b31-88e8-58de-be2c-1cc44531875f"
 version = "0.3.0+0"
+
+[[deps.Rotations]]
+deps = ["LinearAlgebra", "Quaternions", "Random", "StaticArrays", "Statistics"]
+git-tree-sha1 = "793b6ef92f9e96167ddbbd2d9685009e200eb84f"
+uuid = "6038ab10-8711-5258-84ad-4b1120ba62dc"
+version = "1.3.3"
 
 [[deps.SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
@@ -1745,8 +1752,8 @@ version = "3.5.0+0"
 # ╟─bde91afb-ee5e-4859-ad06-0f24e944c186
 # ╟─19a07ff7-421a-441c-8586-9ddc8c6ae703
 # ╟─92dff6b8-e631-4248-9248-b16d6abc71d0
-# ╠═ba9f89d4-841f-46e3-aba3-700ed5aca2a9
-# ╠═400e8363-4ce0-432e-9431-132aee2e4c3a
+# ╟─400e8363-4ce0-432e-9431-132aee2e4c3a
+# ╟─ba9f89d4-841f-46e3-aba3-700ed5aca2a9
 # ╟─dffbe2ea-c9ec-4e0b-81f8-3f69697bf5fc
 # ╠═cb849bc6-0433-4491-bf5d-d26525effb3f
 # ╟─00000000-0000-0000-0000-000000000001
